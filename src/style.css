@@ -150,6 +150,7 @@ button,input,select{font:inherit;color:inherit}
   #legend p{display:none}
   #mode{left:max(16px,env(safe-area-inset-left,0px));transform:none}
   #mode .z{display:none}
+  #mode:has(.hist:not([hidden])) #modeName{display:none}
   #toast{bottom:auto;top:120px}
   #zoom{display:flex}
   #zoom #zin,#zoom #zout{display:none}
@@ -237,3 +238,10 @@ body.adding #rp.peek{display:none}
 #legend .trow.blend{margin:6px 0 2px}
 #legend.closed .trow.blend{margin-bottom:0}
 @media (max-width:760px){#legend .trow{font-size:12px;gap:8px}#legend .trow output{min-width:42px}.pfoot{padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px))}}
+
+.daterow{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--ink-2);font-size:13px;margin-top:8px}
+.daterow select{border:1px solid var(--rule);background:var(--panel-solid);border-radius:8px;padding:5px 8px;max-width:70%}
+.drange{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px;color:var(--ink-2)}
+.drange input{flex:1;min-width:0;height:32px;border:1px solid var(--rule);background:var(--panel-solid);border-radius:8px;padding:0 6px;color:var(--ink)}
+#mode .hist{font-weight:600;color:#fff;background:var(--accent);padding:2px 8px;border-radius:99px;font-size:12px}
+#panel.collapsed .daterow,#panel.collapsed .drange{display:none}

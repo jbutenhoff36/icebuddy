@@ -19,7 +19,7 @@
   <canvas id="overlay"></canvas>
 
   <div id="mode" class="glass" aria-live="polite">
-    <span class="steps"><i></i><i></i><i></i></span><b id="modeName">Lake averages</b><span class="z" id="zl"></span>
+    <span class="steps"><i></i><i></i><i></i></span><b id="modeName">Lake averages</b><span class="z" id="zl"></span><span class="hist" id="histTag" hidden></span>
   </div>
 
   <div id="zoom" class="glass">
@@ -56,6 +56,19 @@
           <option value="count">Most reports</option>
           <option value="az">Name A–Z</option>
         </select>
+      </div>
+      <div class="daterow">
+        <label for="dateMode">Dates</label>
+        <select id="dateMode" aria-label="Which reports to show">
+          <option value="now">Current ice (last 30 days)</option>
+          <option value="week">Last 7 days</option>
+          <option value="winter">This winter</option>
+          <option value="lastwinter">Last winter</option>
+          <option value="custom">Pick dates…</option>
+        </select>
+      </div>
+      <div class="drange" id="drange" hidden>
+        <input type="date" id="dFrom" aria-label="From date"><span>to</span><input type="date" id="dTo" aria-label="To date">
       </div>
     </div>
     <ul id="list" role="listbox" aria-label="Lakes"></ul>

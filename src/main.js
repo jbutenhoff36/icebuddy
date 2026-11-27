@@ -64,14 +64,47 @@ async function loadGeoms(ls){
 }
 async function loadGeom(l){await loadGeoms([l]);return l.geom;}
 let reports=[];
-/* Reports from the last 30 days, newest first. */
+/* Reports in the chosen date range (default: the last 30 days), newest first. */
+const DAY=864e5;
+let range={mode:'now',from:0,to:0};   // from/to in ms; to is the end of the last day picked
+const isHist=()=>range.mode!=='now';
+// In a past range, ages count back from the newest report in it, so the map shades it like it looked that day.
+let histRef=0;
+const refT=()=>isHist()?histRef:Date.now();
+const dayStart=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x.getTime();};
+const ymd=t=>{const d=new Date(t);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const parseYmd=v=>{const [y,m,d]=v.split('-').map(Number);return new Date(y,m-1,d).getTime();};
+function winterOf(t){const d=new Date(t);const y=d.getMonth()>=6?d.getFullYear():d.getFullYear()-1;return [new Date(y,10,1).getTime(),new Date(y+1,3,30,23,59,59,999).getTime()];}
+function setRange(mode){
+  const now=Date.now();range.mode=mode;
+  if(mode==='now'){range.from=now-30*DAY;range.to=now;}
+  else if(mode==='week'){range.from=dayStart(now-6*DAY);range.to=now;}
+  else if(mode==='winter'){[range.from,range.to]=winterOf(now);}
+  else if(mode==='lastwinter'){const y=new Date(winterOf(now)[0]).getFullYear();[range.from,range.to]=winterOf(new Date(y-1,11,1).getTime());}
+  else if(mode==='custom'){
+    const f=$('#dFrom').value,t=$('#dTo').value;
+    range.from=f?parseYmd(f):dayStart(now-30*DAY);range.to=(t?parseYmd(t):dayStart(now))+DAY-1;
+    if(range.from>range.to)[range.from,range.to]=[dayStart(range.to),range.from+DAY-1];
+  }
+  $('#dateMode').value=mode;$('#drange').hidden=mode!=='custom';
+  if(mode==='custom'){$('#dFrom').value=ymd(range.from);$('#dTo').value=ymd(range.to);}
+  const tag=$('#histTag');tag.hidden=!isHist();tag.textContent=isHist()?rangeTxt():'';
+}
+function rangeTxt(){
+  const o={month:'short',day:'numeric'},a=new Date(range.from),b=new Date(Math.min(range.to,Date.now()));
+  if(a.getFullYear()!==b.getFullYear()||a.getFullYear()!==new Date().getFullYear())o.year='numeric';
+  return a.toLocaleDateString(undefined,o)+' – '+b.toLocaleDateString(undefined,o);
+}
 async function loadReports(){
-  const {data,error}=await supabase.from('readings_recent').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat,photo_path,display_name')
+  const {data,error}=await supabase.from('readings_history').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat,photo_path,display_name')
+    .gte('observed_at',new Date(range.from).toISOString()).lte('observed_at',new Date(range.to).toISOString())
     .order('observed_at',{ascending:false}).range(0,4999);
-  if(error){console.warn('readings',error);toast('Could not load reports. Showing the map without them.');return;}
-  const now=Date.now();
+  if(error){console.warn('readings',error);toast('Could not load reports. Showing the map without them.');reports=[];return;}
+  if(data.length===5000)toast('That date range has a lot of reports, so only the newest 5,000 are shown. Pick a shorter range to see the rest.',5000);
+  histRef=data.length?Math.max(...data.map(r=>Date.parse(r.observed_at))):Math.min(Date.now(),range.to);
+  const ref=refT();
   reports=data.map(r=>({id:r.id,lake:r.lake_id,user:r.user_id,lon:r.lon,lat:r.lat,inches:+r.inches,snow:r.snow_inches==null?null:+r.snow_inches,
-    ice:r.ice,note:r.note,photo:r.photo_path,by:r.display_name,ageH:Math.max(0,(now-Date.parse(r.observed_at))/3.6e6)}));
+    ice:r.ice,note:r.note,photo:r.photo_path,by:r.display_name,ageH:Math.max(0,(ref-Date.parse(r.observed_at))/3.6e6)}));
 }
 const recency=h=>Math.exp(-h/96);
 function stats(){
@@ -239,7 +272,7 @@ function updateMode(z){
 
 /* ---------- list and search ---------- */
 let selected=null,query='';
-const ago=h=>h<1?'just now':h<24?Math.round(h)+' h ago':Math.round(h/24)+' d ago';
+const ago=h=>isHist()?new Date(refT()-h*3.6e6).toLocaleDateString(undefined,{month:'short',day:'numeric'}):h<1?'just now':h<24?Math.round(h)+' h ago':Math.round(h/24)+' d ago';
 const fmt=v=>(Math.round(v*2)/2).toFixed(1).replace('.0','');
 const acresTxt=a=>a>=1000?(a/1000).toFixed(a>=10000?0:1)+'k acres':Math.round(a)+' acres';
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
@@ -259,7 +292,7 @@ function lakeRow(l,detail){
     :`${fmt(l.min)}–${fmt(l.max)} in · ${l.n} reports · ${ago(l.newest)}`);
   const flags=el('span','flags');
   if(l.avg!=null&&l.max-l.min>=8)flags.append(el('span','flag warn','Wide range'));
-  if(l.avg!=null&&l.newest>96)flags.append(el('span','flag','Stale'));
+  if(!isHist()&&l.avg!=null&&l.newest>96)flags.append(el('span','flag','Stale'));
   li.append(sw,el('span','nm',label(l)),avg,meta,flags);
   if(detail){
     const d=el('div','detail');
@@ -287,7 +320,7 @@ function renderList(){
     for(const ix of hits)ul.append(lakeRow(lakes.get(ix.id)||ix,selected===ix.id));
     return;
   }
-  const sortBy=$('#sort').value,stale=l=>l.newest>96;
+  const sortBy=$('#sort').value,stale=l=>!isHist()&&l.newest>96;
   const key={thick:l=>-l.avg,thin:l=>l.avg,recent:l=>l.newest,count:l=>-l.n}[sortBy];
   const ls=reported().sort((a,b)=>{
     if(sortBy==='az')return label(a).localeCompare(label(b));
@@ -295,7 +328,7 @@ function renderList(){
     return key(a)-key(b);});
   const sel=selected&&lakes.get(selected);
   if(sel&&sel.avg==null){ul.append(el('li','sec','Selected lake'),lakeRow(sel,true),el('li','sec','Lakes with reports'));}
-  $('#count').textContent=ls.length+' lakes with reports';
+  $('#count').textContent=ls.length+(ls.length===1?' lake':' lakes')+(isHist()?' with reports in these dates':' with reports');
   for(const l of ls)ul.append(lakeRow(l,selected===l.id));
 }
 async function selectLake(id,fly,props){
@@ -594,6 +627,7 @@ async function submitReading(l,lon,lat){
     if(photo_path)supabase.storage.from('photos').remove([photo_path]);
     toast(error.code==='23514'?`That spot is not on ${label(l)}. Reports can only go on the lake.`:'Could not save the report: '+error.message,4500);return false;}
   $('#addNote').value='';$('#photoDel').click();
+  if(isHist())setRange('now');
   await refresh();selected=l.id;map.setFilter('sel',['==',['get','id'],l.id]);renderList();
   closeReport();
   toast(`Saved ${fmt(f.inches)} in on ${label(l)}. It now averages ${fmt(lakeInfo(l.id).avg)} in. Thanks!`,4500);
@@ -733,6 +767,11 @@ $('#zin').onclick=()=>map.zoomIn();$('#zout').onclick=()=>map.zoomOut();
 $('#satBtn').onclick=()=>setSatellite(!satellite);
 window.icebuddyMap=map;
 
+$('#dateMode').addEventListener('change',async e=>{setRange(e.target.value);hidePop();await refresh();
+  if(isHist()&&!reported().length)toast('No ice reports in those dates.');});
+for(const id of ['#dFrom','#dTo'])$(id).addEventListener('change',async()=>{setRange('custom');hidePop();await refresh();
+  if(!reported().length)toast('No ice reports in those dates.');});
+
 /* ---------- start ---------- */
 async function refresh(){
   for(const l of lakes.values())l.avg=null;
@@ -742,6 +781,7 @@ async function refresh(){
 }
 let ready;const mapLoaded=new Promise(r=>ready=r);function mapReady(){ready();}
 const {data:{session}}=await supabase.auth.getSession();user=session?.user??null;
+setRange('now');
 await Promise.all([loadReports(),loadProfile().then(loadAlerts)]);renderAuth();stats();
 await mapLoaded;
 await loadGeoms(reported());
