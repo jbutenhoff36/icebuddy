@@ -7,6 +7,7 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     pullRequestPreviewsEnabled: false
+    # These headers apply when the site is created from this Blueprint (Render > New > Blueprint).
     headers:
       - path: /assets/*
         name: Cache-Control
