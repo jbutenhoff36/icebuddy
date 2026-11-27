@@ -245,3 +245,6 @@ body.adding #rp.peek{display:none}
 .drange input{flex:1;min-width:0;height:32px;border:1px solid var(--rule);background:var(--panel-solid);border-radius:8px;padding:0 6px;color:var(--ink)}
 #mode .hist{font-weight:600;color:#fff;background:var(--accent);padding:2px 8px;border-radius:99px;font-size:12px}
 #panel.collapsed .daterow,#panel.collapsed .drange{display:none}
+
+.gbtn{width:100%;justify-content:center;height:42px;font-weight:600;margin-top:4px}
+#authDlg .or{text-align:center;color:var(--ink-3);font-size:12px;margin:8px 0 0}

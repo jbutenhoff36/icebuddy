@@ -482,20 +482,52 @@ function openAuth(why){
   $('#authOut').hidden=!!user;$('#authIn').hidden=!user;
   $('#authTitle').textContent=why||'Sign in to IceBuddy';
   if(user){$('#authWho').textContent=user.email;$('#acctName').value=profile?.display_name||'';renderAlertList();}
-  $('#authMsg').textContent='';if(!d.open)d.showModal();
-  if(!user)setTimeout(()=>$('#authEmail').focus(),50);
+  if(!d.open){$('#authMsg').textContent='';if(!user&&!authEmailSent)authStep(false);}
+  if(!d.open)d.showModal();
+  if(!user&&$('#codeForm').hidden)setTimeout(()=>$('#authEmail').focus(),50);
 }
 /* Run fn now if signed in, otherwise ask to sign in and run it right after. */
 function needUser(why,fn){if(user)return fn();afterSignIn=fn;openAuth(why);}
 $('#authBtn').addEventListener('click',()=>openAuth());
 $('#authClose').addEventListener('click',()=>$('#authDlg').close());
+/* Sign in with a code typed into the app. The email also has a link, but on phones the link often opens
+   in a different browser than the app (it can't finish signing in there), so the code is the main path. */
+let authEmailSent='';
+function authStep(code){
+  $('#authForm').hidden=code;$('#codeForm').hidden=!code;$('#authBack').hidden=!code;
+  $('#authLead').textContent=code?`We sent a code to ${authEmailSent}. Type it below.`:'We\'ll email you a sign-in code. No password needed.';
+  if(code){$('#authCode').value='';setTimeout(()=>$('#authCode').focus(),50);}
+}
+function authErr(error){
+  const m=(error.message||'').toLowerCase();
+  if(error.status===429||m.includes('rate limit'))return 'Too many sign-in emails have gone out in the last hour. Please try again a bit later.';
+  if(m.includes('expired')||m.includes('invalid')||m.includes('token'))return 'That code didn’t work. Check it, or send a new one.';
+  return 'That did not work: '+error.message;
+}
 $('#authForm').addEventListener('submit',async e=>{
   e.preventDefault();const email=$('#authEmail').value.trim();if(!email)return;
   $('#authSend').disabled=true;$('#authMsg').textContent='Sending…';
   const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+import.meta.env.BASE_URL}});
   $('#authSend').disabled=false;
-  $('#authMsg').textContent=error?('That did not work: '+error.message):`Check ${email} for a sign-in link. Open it on this device.`;
+  if(error){$('#authMsg').textContent=authErr(error);return;}
+  authEmailSent=email;$('#authMsg').textContent='It can take a minute. Check spam if you don’t see it.';authStep(true);
 });
+$('#codeForm').addEventListener('submit',async e=>{
+  e.preventDefault();const token=$('#authCode').value.replace(/\D/g,'');if(token.length<6)return;
+  $('#codeBtn').disabled=true;$('#authMsg').textContent='Signing in…';
+  const {error}=await supabase.auth.verifyOtp({email:authEmailSent,token,type:'email'});
+  $('#codeBtn').disabled=false;
+  $('#authMsg').textContent=error?authErr(error):'';
+});
+/* "Continue with Google" shows only once the Google provider is switched on in Supabase. */
+fetch(import.meta.env.VITE_SUPABASE_URL+'/auth/v1/settings',{headers:{apikey:import.meta.env.VITE_SUPABASE_KEY}})
+  .then(r=>r.ok?r.json():null).then(j=>{if(j?.external?.google){$('#googleBtn').hidden=false;$('#googleOr').hidden=false;}}).catch(()=>{});
+$('#googleBtn').addEventListener('click',async()=>{
+  $('#authMsg').textContent='Opening Google…';
+  const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+import.meta.env.BASE_URL+location.search}});
+  if(error)$('#authMsg').textContent='Google sign-in isn’t available right now. Use the email code instead.';
+});
+$('#authBack').addEventListener('click',()=>{$('#authMsg').textContent='';authStep(false);$('#authEmail').focus();});
 $('#signOut').addEventListener('click',async()=>{await supabase.auth.signOut();$('#authDlg').close();toast('Signed out.');});
 const NAME_OK=/^[A-Za-z0-9 ._'-]{2,40}$/;
 async function saveName(name,msgEl){
@@ -781,6 +813,12 @@ async function refresh(){
 }
 let ready;const mapLoaded=new Promise(r=>ready=r);function mapReady(){ready();}
 const {data:{session}}=await supabase.auth.getSession();user=session?.user??null;
+const linkQ=new URLSearchParams(location.search+'&'+location.hash.slice(1));
+if(linkQ.has('code')||linkQ.has('error_description')){
+  const {data:{session}}=await supabase.auth.getSession();
+  if(!session)setTimeout(()=>toast('Sign-in couldn’t finish because it opened in a different browser than IceBuddy. Go back to IceBuddy and sign in with the code from the email.',8000),800);
+  history.replaceState(null,'',location.pathname+(linkQ.get('lake')?'?lake='+encodeURIComponent(linkQ.get('lake')):''));
+}
 setRange('now');
 await Promise.all([loadReports(),loadProfile().then(loadAlerts)]);renderAuth();stats();
 await mapLoaded;
