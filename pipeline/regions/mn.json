@@ -1,0 +1,124 @@
+{
+  "region_id": "mn",
+  "name": "Minnesota",
+  "bounds": [
+    -97.25,
+    43.49,
+    -89.48,
+    49.39
+  ],
+  "center": [
+    -94.3,
+    46.4,
+    6
+  ],
+  "source": {
+    "title": "DNR Hydrography Dataset, layer Dnr Hydro Features All",
+    "publisher": "Minnesota Department of Natural Resources",
+    "url": "https://gis.data.mn.gov/ (item d26eb1d402e84c4db9a302d29f4fc1c9, layer 1)",
+    "attribution": "Lake outlines: Minnesota DNR, DNR Hydrography Dataset"
+  },
+  "fields": {
+    "lake_number": [
+      "dowlknum"
+    ],
+    "name": [
+      "pw_basin_n",
+      "map_label"
+    ],
+    "county": [
+      "cty_name"
+    ],
+    "kind": [
+      "wb_class"
+    ],
+    "uid": [
+      "unique_id"
+    ]
+  },
+  "keep_kinds": [
+    "Lake or Pond",
+    "Reservoir",
+    "Artificial Basin",
+    "Mine Pit Lake",
+    "Mine Pit Lake (NF)",
+    "Riverine polygon"
+  ],
+  "min_acres": 10,
+  "index_min_acres": 10,
+  "max_zoom": 12,
+  "min_zoom": 4,
+  "zoom_min_acres": {
+    "4": 2000,
+    "5": 800,
+    "6": 300,
+    "7": 100,
+    "8": 40,
+    "9": 10
+  },
+  "exclude": {
+    "sub_flag": [
+      "Y"
+    ],
+    "outside_mn": [
+      "Y"
+    ]
+  },
+  "_notes": "sub_flag Y rows are sub-basins (bays) that overlap their parent lake; outside_mn Y rows are the Canadian/Wisconsin parts of border lakes. Islands are already holes in the lake shapes.",
+  "lake_first_names": [
+    "Minnetonka",
+    "Winnibigoshish",
+    "Vermilion",
+    "Superior",
+    "Waconia",
+    "Minnewaska",
+    "Pepin",
+    "Bemidji",
+    "Shetek",
+    "Carlos",
+    "Benton",
+    "Elmo",
+    "Harriet",
+    "Nokomis",
+    "Calhoun",
+    "Bde Maka Ska",
+    "Phalen",
+    "Como",
+    "Johanna",
+    "Josephine",
+    "Owasso",
+    "Irene",
+    "Mary",
+    "Ida",
+    "Andrew",
+    "Miltona",
+    "Darling",
+    "Le Homme Dieu",
+    "Geneva",
+    "Florida",
+    "Lillian",
+    "Hendricks",
+    "Traverse",
+    "Koronis",
+    "Sylvia",
+    "Marion",
+    "Zumbro",
+    "Byllesby",
+    "Shaokatan",
+    "Washington",
+    "Jefferson",
+    "Titlow",
+    "Tetonka",
+    "Volney",
+    "Elysian",
+    "Madison",
+    "Crystal",
+    "Emily",
+    "Edward",
+    "Sarah",
+    "Rebecca",
+    "Ripley",
+    "Minnetonka",
+    "Superior"
+  ]
+}

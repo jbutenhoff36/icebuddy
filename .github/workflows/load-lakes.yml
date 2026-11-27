@@ -1,0 +1,24 @@
+name: Load lakes
+# Pushes the region pack's lake outlines into Supabase whenever they change on main,
+# or on demand from the Actions tab.
+on:
+  push:
+    branches: [main]
+    paths: ['data/*/lake_outlines.geojsonl.gz']
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Region pack to load
+        default: mn
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/load-lakes.mjs ${{ inputs.region || 'mn' }}
