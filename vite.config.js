@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
-// GitHub Pages serves the site at https://jbutenhoff36.github.io/icebuddy/, so every path is under /icebuddy/.
+// Render serves the site at the root of its address (icebuddy.onrender.com). Set BASE_PATH to host it under a subfolder.
 export default defineConfig({
-  base: process.env.BASE_PATH || '/icebuddy/',
+  base: process.env.BASE_PATH || '/',
   build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
 });

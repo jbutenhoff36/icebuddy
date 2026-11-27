@@ -58,8 +58,9 @@ npm run build    # static site in dist/
 
 ## Hosting
 
-GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main`, at
-https://jbutenhoff36.github.io/icebuddy/. Under Settings → Pages, the source must be set to "GitHub Actions".
+Render static site, set up from `render.yaml`. It builds with `npm ci && npm run build` and publishes `dist/`,
+and every push to `main` redeploys it. Address: https://icebuddy.onrender.com (Render adds a suffix if that
+name is taken).
 
 ## License
 
