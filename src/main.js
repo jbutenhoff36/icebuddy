@@ -263,15 +263,15 @@ function lakeRow(l,detail){
   li.append(sw,el('span','nm',label(l)),avg,meta,flags);
   if(detail){
     const d=el('div','detail');
+    const acts=el('div','acts');
+    const rb=el('button','btn primary','Report ice here');rb.addEventListener('click',ev=>{ev.stopPropagation();openReport(l);});
+    const nb=el('button','btn','Notify me');nb.addEventListener('click',ev=>{ev.stopPropagation();openAlert(l);});
+    const fb=el('button','btn','Ice calc');fb.title='Estimate how fast the ice will grow';fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
+    acts.append(rb,nb,fb);d.append(acts);
     const st=(v,k)=>{const e=el('div','stat');e.append(el('b',null,v),el('span',null,k));return e;};
     if(l.avg!=null){d.append(st(fmt(l.min)+' in','Thinnest'),st(fmt(l.max)+' in','Thickest'),st(l.n,'Reports'));
       d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres · DNR lake ${l.id.split(':')[1]}. The average leans toward newer reports. Zoom in to see each reading.`));}
     else d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres. No one has reported ice here in the last 30 days. Be the first: tap “Report ice here”.`));
-    const acts=el('div','acts');
-    const rb=el('button','btn primary','Report ice here');rb.addEventListener('click',ev=>{ev.stopPropagation();openReport(l);});
-    const nb=el('button','btn','Notify me');nb.addEventListener('click',ev=>{ev.stopPropagation();openAlert(l);});
-    const fb=el('button','link','Ice growth forecast');fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
-    acts.append(rb,nb,fb);d.append(acts);
     li.append(d);
   }
   li.addEventListener('click',()=>selectLake(l.id,true));
@@ -299,6 +299,7 @@ function renderList(){
   for(const l of ls)ul.append(lakeRow(l,selected===l.id));
 }
 async function selectLake(id,fly,props){
+  if(fcLakeRef&&fcLakeRef.id!==id)$('#fc').hidden=true;
   selected=id;const l=lakeInfo(id,props);
   map.setFilter('sel',['==',['get','id'],id||'']);
   if(fly){query='';$('#q').value='';}
@@ -307,7 +308,8 @@ async function selectLake(id,fly,props){
   if(fly&&l.bbox){map.fitBounds([[l.bbox[0],l.bbox[1]],[l.bbox[2],l.bbox[3]]],
     {padding:{top:70,bottom:wide()?70:innerHeight*0.48,left:wide()?390:30,right:wide()?60:30},maxZoom:12,duration:1400,essential:true});
     if(!wide())collapse(true);}
-  const row=document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);row&&row.scrollIntoView({block:'nearest',behavior:'smooth'});
+  if(!fly&&!wide()&&$('#panel').classList.contains('collapsed'))collapse(false,false);
+  const row=document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);row&&row.scrollIntoView({block:wide()?'nearest':'start',behavior:'smooth'});
 }
 function clearSel(){selected=null;map.setFilter('sel',['==',['get','id'],'']);renderList();}
 let qt;$('#q').addEventListener('input',e=>{clearTimeout(qt);qt=setTimeout(()=>{query=e.target.value.trim();renderList();},120);});
@@ -711,7 +713,7 @@ function renderAlertList(){
   if(!myAlerts.length){ul.append(el('li','empty','No alerts yet. Open a lake and tap “Notify me”.'));return;}
   for(const a of myAlerts){
     const l=lakeInfo(a.lake_id,{name:INDEX.get(a.lake_id)?.name});
-    const li=el('li',null,`${label(l)}: ${a.metric==='average'?'average':'any report'} ${a.op==='gte'?'≥':'≤'} ${fmt(+a.inches)} in`);
+    const li=el('li',null,`${label(l)}: ${a.metric==='average'?'average':'any report'} ${a.op==='gte'?'>':'<'} ${fmt(+a.inches)} in`);
     const x=el('button','link','Delete');x.onclick=async()=>{await supabase.from('alerts').delete().eq('id',a.id);await loadAlerts();};
     li.append(x);ul.append(li);
   }

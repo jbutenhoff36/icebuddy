@@ -27,7 +27,8 @@ function average(rows: { inches: number; observed_at: string }[]) {
   for (const r of rows) { const w = weight(r.observed_at); sw += w; s += w * Number(r.inches); }
   return sw ? Math.round((s / sw) * 2) / 2 : null;
 }
-const meets = (v: number | null, op: string, t: number) => v != null && (op === "gte" ? v >= t : v <= t);
+// "gte" / "lte" are the stored names; the app shows them as "greater than" / "less than", so compare strictly.
+const meets = (v: number | null, op: string, t: number) => v != null && (op === "gte" ? v > t : v < t);
 const fmt = (v: number) => (Math.round(v * 2) / 2).toString();
 
 Deno.serve(async (req) => {
@@ -59,7 +60,7 @@ Deno.serve(async (req) => {
     } else {
       // only when the average crosses the line, not on every report while it stays there
       if (!meets(after, a.op, t) || meets(before, a.op, t)) continue;
-      body = `${name} now averages ${fmt(after!)} in of ice (your alert: ${a.op === "gte" ? "at least" : "at most"} ${fmt(t)} in).`;
+      body = `${name} now averages ${fmt(after!)} in of ice (your alert: ${a.op === "gte" ? "greater than" : "less than"} ${fmt(t)} in).`;
     }
     const { data: subs } = await db.from("push_subscriptions").select("endpoint,p256dh,auth").eq("user_id", a.user_id);
     const payload = JSON.stringify({ title: "IceBuddy", body, url: `${APP_URL}?lake=${encodeURIComponent(r.lake_id)}`, tag: `lake-${r.lake_id}` });

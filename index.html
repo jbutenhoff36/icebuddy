@@ -67,11 +67,11 @@
 
   <div id="legend" class="glass">
     <button class="coll" id="legendBtn" aria-expanded="true" aria-controls="legendBody"><h3>Reported ice thickness</h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="trow blend"><label for="radius" title="How far each report spreads its color on the map">Blend</label><input id="radius" type="range" min="300" max="5000" step="100" value="1800"><output id="radiusOut" for="radius">1.8 km</output></div>
     <div class="lbody" id="legendBody">
     <div class="ramp"></div>
     <div class="ticks"><span>0</span><span>4</span><span>7</span><span>12</span><span>20+ in</span></div>
     <p>Colors show what people reported, not whether ice will hold you. Ice is never guaranteed safe.</p>
-    <div class="trow"><label for="radius">Blend distance</label><input id="radius" type="range" min="300" max="5000" step="100" value="1800"><output id="radiusOut" for="radius">1.8 km</output></div>
     </div>
   </div>
 
@@ -137,7 +137,7 @@
     <p>Get a phone notification when ice on a lake reaches the thickness you care about.</p>
     <label class="fl">Lake<span class="lakepick"><input id="alertLakeQ" placeholder="Search lakes" autocomplete="off" aria-label="Lake"><ul id="alertLakeHits" class="hits" hidden></ul></span></label>
     <div class="rule">When <select id="alertMetric" aria-label="Which ice measurement"><option value="average">the lake average</option><option value="any">any new report</option></select>
-      is <select id="alertOp" aria-label="Comparison"><option value="gte">at least</option><option value="lte">at most</option></select>
+      is <select id="alertOp" aria-label="Comparison"><option value="gte">greater than</option><option value="lte">less than</option></select>
       <input class="num" id="alertIn" type="number" min="0" max="60" step="0.5" value="8" inputmode="decimal" aria-label="Inches"> in</div>
     <p class="fnote" id="alertNote"></p>
     <p class="msg" id="alertMsg" role="status"></p>
