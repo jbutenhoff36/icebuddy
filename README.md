@@ -55,3 +55,14 @@ npm run build    # static site in dist/
 - **Ice forecast.** Stefan's rule, fed by the National Weather Service 7-day forecast for the lake.
 
 `.env` holds the Supabase URL and publishable key. Both are meant to be public, and row-level security decides what they can do.
+
+## Hosting
+
+GitHub Pages, deployed by `.github/workflows/pages.yml` on every push to `main`, at
+https://jbutenhoff36.github.io/icebuddy/. Under Settings → Pages, the source must be set to "GitHub Actions".
+
+## License
+
+Copyright © 2026 IceBuddy. All rights reserved. The code is public so people can see how it works, but it is
+not open source: you may not copy, redistribute or run it as your own service without written permission.
+Lake data is from the Minnesota DNR, and imagery is from the USGS (public domain).

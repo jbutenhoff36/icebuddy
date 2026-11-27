@@ -563,4 +563,4 @@ await loadGeoms(reported());
 syncStates();renderList();draw();
 setInterval(()=>{if(!document.hidden)refresh();},120000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
-if('serviceWorker' in navigator&&import.meta.env.PROD)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&import.meta.env.PROD)navigator.serviceWorker.register(import.meta.env.BASE_URL+'sw.js').catch(()=>{});
