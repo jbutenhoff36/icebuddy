@@ -37,3 +37,33 @@ d26eb1d402e84c4db9a302d29f4fc1c9). Copy `lakes.pmtiles` and `lake_index.json` in
 `lake_outlines.geojsonl` into `data/mn/`.
 
 Lake outlines: Minnesota DNR, DNR Hydrography Dataset.
+
+## The app
+
+A plain JavaScript web app built with Vite. It uses MapLibre GL for the map, PMTiles for lakes and Supabase for sign-in and readings, and it can be installed to a phone's home screen as a PWA.
+
+```
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # static site in dist/
+```
+
+- **Map.** Lake averages show when zoomed out, blended readings clipped to each shoreline in the middle zooms, and individual pins when zoomed in.
+- **Sign-in.** Email link through Supabase Auth. Anyone can view reports; signing in is needed to add one.
+- **Reporting.** "Here, at my GPS spot" uses the phone's GPS. It refuses a fix worse than 75 m, and the database checks the point is on the lake. "Tap on map" works the same way from a tap.
+- **Satellite.** USGS National Map imagery (public domain, no key).
+- **Ice forecast.** Stefan's rule, fed by the National Weather Service 7-day forecast for the lake.
+
+`.env` holds the Supabase URL and publishable key. Both are meant to be public, and row-level security decides what they can do.
+
+## Hosting
+
+Render static site, set up from `render.yaml`. It builds with `npm ci && npm run build` and publishes `dist/`,
+and every push to `main` redeploys it. Address: https://icebuddy.onrender.com (Render adds a suffix if that
+name is taken).
+
+## License
+
+Copyright © 2026 IceBuddy. All rights reserved. The code is public so people can see how it works, but it is
+not open source: you may not copy, redistribute or run it as your own service without written permission.
+Lake data is from the Minnesota DNR, and imagery is from the USGS (public domain).

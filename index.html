@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>IceBuddy</title>
+<meta name="description" content="Shared ice-thickness reports for Minnesota lakes.">
+<meta name="theme-color" content="#0f3b57">
+<link rel="manifest" href="%BASE_URL%manifest.webmanifest">
+<link rel="icon" href="%BASE_URL%icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="%BASE_URL%icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Inter:wght@400;500;600&display=swap">
+</head>
+<body>
+<div id="app">
+  <div id="map" aria-label="Map of Minnesota lakes colored by reported ice thickness"></div>
+  <canvas id="overlay"></canvas>
+
+  <div id="mode" class="glass" aria-live="polite">
+    <span class="steps"><i></i><i></i><i></i></span><b id="modeName">Lake averages</b><span class="z" id="zl"></span>
+  </div>
+
+  <div id="zoom" class="glass">
+    <button id="zin" aria-label="Zoom in">+</button>
+    <button id="zout" aria-label="Zoom out">−</button>
+    <button id="locBtn" aria-label="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+    <button id="satBtn" aria-pressed="false" aria-label="Show satellite imagery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg></button>
+    <button id="theme" aria-label="Switch to dark map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path id="themeIcon" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+  </div>
+
+  <aside id="panel" class="glass">
+    <div class="p-head">
+      <div class="brand">
+        <div class="wordmark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11"/><path d="M9.5 3.5 12 5.5l2.5-2M9.5 20.5 12 18.5l2.5 2"/></svg>
+          IceBuddy
+        </div>
+        <span class="chip">Beta</span><span style="flex:1"></span>
+        <button class="btn sm" id="authBtn">Sign in</button>
+        <button class="sheet-toggle" id="sheetBtn" aria-label="Hide lake list" aria-expanded="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+      <div class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search 9,391 named Minnesota lakes" autocomplete="off" aria-label="Search lakes">
+      </div>
+      <div class="sortrow">
+        <span id="count">Lakes with reports</span>
+        <select id="sort" aria-label="Sort lakes">
+          <option value="thick">Thickest reported</option>
+          <option value="thin">Thinnest reported</option>
+          <option value="recent">Most recent report</option>
+          <option value="count">Most reports</option>
+          <option value="az">Name A–Z</option>
+        </select>
+      </div>
+    </div>
+    <ul id="list" role="listbox" aria-label="Lakes"></ul>
+    <div class="tools" id="tools">
+      <button class="coll" id="toolsBtn" aria-expanded="true" aria-controls="toolsBody"><h2>Report ice</h2><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="tbody" id="toolsBody">
+        <div id="reportSignedOut">
+          <p class="hint">Sign in to share what you measured. Anyone can view reports without an account.</p>
+          <button class="btn primary" id="signInFromPanel">Sign in to report ice</button>
+        </div>
+        <div id="reportSignedIn" hidden>
+          <div class="fields">
+            <label>Ice<span><input class="num" id="addVal" type="number" min="0" max="60" step="0.5" value="6" inputmode="decimal"> in</span></label>
+            <label>Snow on top<span><input class="num" id="addSnow" type="number" min="0" max="48" step="0.5" placeholder="?" inputmode="decimal"> in</span></label>
+            <label>Ice type<select id="addIce"><option value="">Not sure</option><option value="clear">Clear</option><option value="white">White / snow ice</option><option value="mixed">Clear under white</option></select></label>
+          </div>
+          <div class="btns">
+            <button class="btn primary" id="gpsBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Here, at my GPS spot</button>
+            <button class="btn" id="addBtn" aria-pressed="false">Tap on map</button>
+          </div>
+        </div>
+        <div class="trow">
+          <label for="radius">Blend distance</label>
+          <input id="radius" type="range" min="300" max="5000" step="100" value="1800">
+          <output id="radiusOut" for="radius">1.8 km</output>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="legend" class="glass">
+    <button class="coll" id="legendBtn" aria-expanded="true" aria-controls="legendBody"><h3>Reported ice thickness</h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="lbody" id="legendBody">
+    <div class="ramp"></div>
+    <div class="ticks"><span>0</span><span>4</span><span>7</span><span>12</span><span>20+ in</span></div>
+    <p>Colors show what people reported, not whether ice will hold you. Ice is never guaranteed safe.</p>
+    </div>
+  </div>
+
+  <section id="fc" class="glass" hidden aria-labelledby="fcTitle">
+    <button class="x" id="fcClose" aria-label="Close forecast">×</button>
+    <div><h2 id="fcTitle">Ice growth forecast</h2><div class="sub" id="fcLake"></div></div>
+    <div class="frow"><span class="lbl">Ice today</span><input class="num" id="fcStart" type="number" min="0" max="40" step="0.5" aria-label="Starting ice thickness in inches"><span>in</span></div>
+    <div class="frow"><span class="lbl">Snow on the ice</span>
+      <div class="seg" id="fcSnow" role="group" aria-label="Snow on the ice"><button data-v="0" aria-pressed="false">None</button><button data-v="1" aria-pressed="true">A few inches</button><button data-v="2" aria-pressed="false">Deep</button></div></div>
+    <div>
+      <div class="frow" style="justify-content:space-between;margin-bottom:6px"><span>Average air temp each day (°F)</span>
+        <div class="seg" id="fcPreset" role="group" aria-label="Temperature presets"><button data-p="nws" aria-pressed="false">Weather forecast</button><button data-p="cold" aria-pressed="false">Cold snap</button><button data-p="normal" aria-pressed="true">Typical</button><button data-p="warm" aria-pressed="false">Warm spell</button></div></div>
+      <div class="fgrid" id="fcDays"></div>
+    </div>
+    <div class="fsum"><b id="fcEnd">—</b><span id="fcEndTxt"></span></div>
+    <svg id="fcChart" viewBox="0 0 340 150" role="img" aria-label="Estimated ice thickness over the next 7 days"></svg>
+    <p class="fnote">Estimated growth only, from Stefan's freezing-degree-day rule. It says nothing about strength, cracks, pressure ridges, currents or slush, and real ice varies across a lake. Always check thickness yourself as you go out.</p>
+    <p class="fnote" id="fcSrc"></p>
+  </section>
+  <div id="attr">Lake outlines: Minnesota DNR · Imagery: USGS The National Map · Weather: NWS</div>
+
+  <div id="tip" class="glass" hidden></div>
+  <div id="pop" class="glass" hidden></div>
+  <div id="toast" class="glass" role="status" hidden></div>
+  <dialog id="authDlg" class="glass" aria-labelledby="authTitle">
+    <button class="x" id="authClose" aria-label="Close">×</button>
+    <div id="authOut">
+      <h2 id="authTitle">Sign in to IceBuddy</h2>
+      <p>We'll email you a link. No password needed.</p>
+      <form id="authForm"><input id="authEmail" type="email" required autocomplete="email" placeholder="you@example.com" aria-label="Email address">
+        <button class="btn primary" id="authSend" type="submit">Email me a link</button></form>
+      <p class="msg" id="authMsg" role="status"></p>
+    </div>
+    <div id="authIn" hidden>
+      <h2>Your account</h2>
+      <p>Signed in as <b id="authWho"></b>.</p>
+      <button class="btn" id="signOut">Sign out</button>
+    </div>
+  </dialog>
+  <div id="loading"><div class="glass"><b>Loading 14,825 Minnesota lakes…</b><div class="bar"><i id="lbar"></i></div><span style="font-size:12px;color:var(--ink-2)" id="ltxt">Lake outlines from the Minnesota DNR</span></div></div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
