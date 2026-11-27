@@ -66,12 +66,12 @@ async function loadGeom(l){await loadGeoms([l]);return l.geom;}
 let reports=[];
 /* Reports from the last 30 days, newest first. */
 async function loadReports(){
-  const {data,error}=await supabase.from('readings_recent').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat')
+  const {data,error}=await supabase.from('readings_recent').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat,photo_path,display_name')
     .order('observed_at',{ascending:false}).range(0,4999);
   if(error){console.warn('readings',error);toast('Could not load reports. Showing the map without them.');return;}
   const now=Date.now();
   reports=data.map(r=>({id:r.id,lake:r.lake_id,user:r.user_id,lon:r.lon,lat:r.lat,inches:+r.inches,snow:r.snow_inches==null?null:+r.snow_inches,
-    ice:r.ice,note:r.note,ageH:Math.max(0,(now-Date.parse(r.observed_at))/3.6e6)}));
+    ice:r.ice,note:r.note,photo:r.photo_path,by:r.display_name,ageH:Math.max(0,(now-Date.parse(r.observed_at))/3.6e6)}));
 }
 const recency=h=>Math.exp(-h/96);
 function stats(){
@@ -266,10 +266,12 @@ function lakeRow(l,detail){
     const st=(v,k)=>{const e=el('div','stat');e.append(el('b',null,v),el('span',null,k));return e;};
     if(l.avg!=null){d.append(st(fmt(l.min)+' in','Thinnest'),st(fmt(l.max)+' in','Thickest'),st(l.n,'Reports'));
       d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres · DNR lake ${l.id.split(':')[1]}. The average leans toward newer reports. Zoom in to see each reading.`));}
-    else d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres. No one has reported ice here in the last 30 days. Sign in and use “Report ice” to add the first reading.`));
-    const fb=el('button','btn primary','Forecast ice growth');fb.style.gridColumn='1 / -1';fb.style.justifySelf='start';
-    fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
-    d.append(fb);
+    else d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres. No one has reported ice here in the last 30 days. Be the first: tap “Report ice here”.`));
+    const acts=el('div','acts');
+    const rb=el('button','btn primary','Report ice here');rb.addEventListener('click',ev=>{ev.stopPropagation();openReport(l);});
+    const nb=el('button','btn','Notify me');nb.addEventListener('click',ev=>{ev.stopPropagation();openAlert(l);});
+    const fb=el('button','link','Ice growth forecast');fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
+    acts.append(rb,nb,fb);d.append(acts);
     li.append(d);
   }
   li.addEventListener('click',()=>selectLake(l.id,true));
@@ -321,8 +323,7 @@ function section(btn,box,key,openByDefault=true){
   btn.addEventListener('click',()=>set(box.classList.contains('closed')));
   const saved=store.get(key);set(saved?saved==='open':openByDefault,false);
 }
-section($('#toolsBtn'),$('#tools'),'tools',wide());   // on phones the form starts folded so the lake list has room
-section($('#legendBtn'),$('#legend'),'legend');
+section($('#legendBtn'),$('#legend'),'legend',!matchMedia('(max-width:640px)').matches);
 if(store.get('list')==='closed')collapse(true,false);
 
 /* light / dark map */
@@ -420,73 +421,212 @@ function showPop(r){popFor=r;pop.replaceChildren();
   const v=el('div','v',fmt(r.inches)+' in');v.style.color=iceCSS(r.inches);
   const iceTxt={clear:'Clear ice',white:'White / snow ice',mixed:'Clear under white'}[r.ice]||'Ice type not given';
   const snowTxt=r.snow==null?'snow not given':r.snow?fmt(r.snow)+' in snow on top':'no snow';
-  const l=el('div','l',`${label(lakeInfo(r.lake))}\n${iceTxt} · ${snowTxt}\nReported ${ago(r.ageH)}`+(r.note?`\n“${r.note}”`:''));l.style.whiteSpace='pre-line';
+  const l=el('div','l',`${label(lakeInfo(r.lake))}\n${iceTxt} · ${snowTxt}\nReported ${ago(r.ageH)} by ${r.by||'an IceBuddy user'}`+(r.note?`\n“${r.note}”`:''));l.style.whiteSpace='pre-line';
   pop.append(x,v,l);
+  if(r.photo){const url=supabase.storage.from('photos').getPublicUrl(r.photo).data.publicUrl;
+    const a=el('a','pphoto');a.href=url;a.target='_blank';a.rel='noopener';const im=new Image();im.src=url;im.alt='Photo of the ice with this report';im.loading='lazy';a.append(im);pop.append(a);}
   if(user&&r.user===user.id){const d=el('button','btn','Delete my reading');d.style.marginTop='8px';d.onclick=()=>deleteReading(r);pop.append(d);}
   pop.hidden=false;placePop();}
 function hidePop(){popFor=null;pop.hidden=true;}
 let adding=false;
 function toast(msg,ms=3200){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,ms);}
 
-/* ---------- sign-in ---------- */
-let user=null;
+/* ---------- dialogs ---------- */
+document.querySelectorAll('dialog [data-close]').forEach(b=>b.addEventListener('click',()=>b.closest('dialog').close()));
+
+/* ---------- sign-in, public name ---------- */
+let user=null,profile=null,afterSignIn=null;
 function renderAuth(){
-  const signed=!!user;
-  $('#authBtn').textContent=signed?(user.email||'Account').slice(0,1).toUpperCase():'Sign in';
+  const signed=!!user,nm=profile?.display_name||user?.email||'';
+  $('#authBtn').textContent=signed?nm.slice(0,1).toUpperCase():'Sign in';
   $('#authBtn').classList.toggle('avatar',signed);
-  $('#authBtn').setAttribute('aria-label',signed?'Account: '+user.email:'Sign in');
-  $('#reportSignedOut').hidden=signed;$('#reportSignedIn').hidden=!signed;
-  if(!signed&&adding)setAdding(false);
+  $('#authBtn').setAttribute('aria-label',signed?'Your account':'Sign in');
 }
-function openAuth(){
+function openAuth(why){
   const d=$('#authDlg');
   $('#authOut').hidden=!!user;$('#authIn').hidden=!user;
-  if(user)$('#authWho').textContent=user.email;
-  $('#authMsg').textContent='';d.showModal();
+  $('#authTitle').textContent=why||'Sign in to IceBuddy';
+  if(user){$('#authWho').textContent=user.email;$('#acctName').value=profile?.display_name||'';renderAlertList();}
+  $('#authMsg').textContent='';if(!d.open)d.showModal();
   if(!user)setTimeout(()=>$('#authEmail').focus(),50);
 }
-$('#authBtn').addEventListener('click',openAuth);
-$('#signInFromPanel').addEventListener('click',openAuth);
+/* Run fn now if signed in, otherwise ask to sign in and run it right after. */
+function needUser(why,fn){if(user)return fn();afterSignIn=fn;openAuth(why);}
+$('#authBtn').addEventListener('click',()=>openAuth());
 $('#authClose').addEventListener('click',()=>$('#authDlg').close());
 $('#authForm').addEventListener('submit',async e=>{
   e.preventDefault();const email=$('#authEmail').value.trim();if(!email)return;
   $('#authSend').disabled=true;$('#authMsg').textContent='Sending…';
   const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+import.meta.env.BASE_URL}});
   $('#authSend').disabled=false;
-  $('#authMsg').textContent=error?('That did not work: '+error.message):`Check ${email} for a sign-in link. You can close this window.`;
+  $('#authMsg').textContent=error?('That did not work: '+error.message):`Check ${email} for a sign-in link. Open it on this device.`;
 });
 $('#signOut').addEventListener('click',async()=>{await supabase.auth.signOut();$('#authDlg').close();toast('Signed out.');});
-supabase.auth.onAuthStateChange((_ev,session)=>{user=session?.user??null;renderAuth();if(popFor)showPop(popFor);});
+const NAME_OK=/^[A-Za-z0-9 ._'-]{2,40}$/;
+async function saveName(name,msgEl){
+  name=name.trim().replace(/\s+/g,' ');
+  if(name&&!NAME_OK.test(name)){msgEl&&(msgEl.textContent='Use 2 to 40 letters, numbers, spaces, or . _ \' -');return false;}
+  const {error}=await supabase.from('profiles').upsert({id:user.id,display_name:name||null,asked_name:true});
+  if(error){msgEl&&(msgEl.textContent='Could not save: '+error.message);return false;}
+  profile={...(profile||{}),display_name:name||null,asked_name:true};renderAuth();await refresh();return true;
+}
+$('#acctNameSave').addEventListener('click',async()=>{if(await saveName($('#acctName').value,$('#authMsg')))toast('Name saved.');});
+$('#nameSave').addEventListener('click',async()=>{if(await saveName($('#nameInput').value,$('#nameMsg')))$('#nameDlg').close();});
+$('#nameSkip').addEventListener('click',async()=>{await saveName('',null);$('#nameDlg').close();});
+$('#nameDlg').addEventListener('close',()=>{const f=afterSignIn;afterSignIn=null;f&&f();});
+async function loadProfile(){
+  if(!user){profile=null;return;}
+  const {data}=await supabase.from('profiles').select('display_name,asked_name').eq('id',user.id).maybeSingle();
+  profile=data||{display_name:null,asked_name:false};
+}
+supabase.auth.onAuthStateChange((ev,session)=>{
+  const was=user?.id;user=session?.user??null;
+  setTimeout(async()=>{   // never await Supabase inside this callback
+    if(user&&user.id!==was){await loadProfile();renderAuth();
+      if($('#authDlg').open)$('#authDlg').close();
+      if(!profile.asked_name){$('#nameMsg').textContent='';$('#nameDlg').showModal();return;}
+      const f=afterSignIn;afterSignIn=null;f&&f();}
+    if(!user){profile=null;renderAuth();}
+    if(popFor)showPop(popFor);
+  },0);
+});
+
+/* ---------- location (asks every time until it's allowed) ---------- */
+function locSteps(){
+  const ua=navigator.userAgent,ios=/iPhone|iPad|iPod/.test(ua),android=/Android/.test(ua);
+  if(ios)return ['Open the <b>Settings</b> app, then <b>Privacy &amp; Security → Location Services</b>. Make sure it is on.',
+    'Scroll to <b>Safari Websites</b> and choose <b>While Using the App</b>.',
+    'Back in IceBuddy, tap <b>aA</b> in the address bar → <b>Website Settings → Location → Allow</b>, then <b>Try again</b>.'];
+  if(android)return ['Tap the <b>lock icon</b> next to the web address (or ⋮ → <b>Settings → Site settings</b>).',
+    'Choose <b>Permissions → Location → Allow</b>.',
+    'If it is still blocked, open phone <b>Settings → Location</b> and turn it on, then <b>Try again</b>.'];
+  return ['Click the <b>lock icon</b> next to the web address.','Set <b>Location</b> to <b>Allow</b>, then <b>Try again</b>.'];
+}
+let locWaiter=null;
+function showLocHelp(denied){
+  $('#locWhy').textContent=denied?'Location is blocked for IceBuddy. Phones don’t let a website open their settings for you, so here is where to turn it on:'
+    :'IceBuddy needs your location to show where you are and drop a report where you’re standing. It’s only used when you tap a location button.';
+  $('#locSteps').innerHTML=denied?locSteps().map(t=>`<li>${t}</li>`).join(''):'';
+  if(!$('#locDlg').open)$('#locDlg').showModal();
+  return new Promise(res=>{locWaiter=res;});
+}
+$('#locRetry').addEventListener('click',()=>{$('#locDlg').close();const w=locWaiter;locWaiter=null;w&&w(true);});
+$('#locDlg').addEventListener('close',()=>{const w=locWaiter;locWaiter=null;w&&w(false);});
+function rawLocate(){
+  return new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p.coords),rej,{enableHighAccuracy:true,timeout:20000,maximumAge:5000}));
+}
+async function locate(){
+  if(!navigator.geolocation)throw new Error('This device does not share its location.');
+  for(;;){
+    let state='prompt';try{state=(await navigator.permissions?.query({name:'geolocation'}))?.state||'prompt';}catch(e){}
+    if(state==='denied'){if(!await showLocHelp(true))throw new Error('');continue;}
+    try{return await rawLocate();}
+    catch(e){
+      if(e.code===1){if(!await showLocHelp(true))throw new Error('');continue;}
+      throw new Error('Could not get a GPS fix. Step into the open and try again.');
+    }
+  }
+}
+function showMe(c){
+  map.getSource('me')?.setData(fc([{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[circle(c.longitude,c.latitude,c.accuracy)]}},
+    {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[c.longitude,c.latitude]}}]));
+}
+function circle(lon,lat,m){const pts=[];for(let i=0;i<=48;i++){const a=i/48*2*Math.PI;
+  pts.push([lon+m*Math.cos(a)/(111320*Math.cos(lat*Math.PI/180)),lat+m*Math.sin(a)/110540]);}return pts;}
+$('#locBtn').addEventListener('click',async()=>{
+  try{const c=await locate();showMe(c);map.easeTo({center:[c.longitude,c.latitude],zoom:Math.max(map.getZoom(),13),duration:900});}
+  catch(e){e.message&&toast(e.message,4500);}
+});
 
 /* ---------- reporting ice ---------- */
+let rpLake=null,photoBlob=null;
+function openReport(l){
+  needUser('Sign in to report ice',()=>{
+    rpLake=l||(selected?lakes.get(selected):null)||null;
+    $('#rpLake').textContent=rpLake?`On ${label(rpLake)}${rpLake.county?' · '+rpLake.county+' County':''}. Use your GPS spot or pick the spot on the map.`
+      :'We’ll find the lake from your GPS spot or where you tap on the map.';
+    $('#fc').hidden=true;$('#rp').hidden=false;if(!wide())collapse(true,false);
+  });
+}
+function closeReport(){$('#rp').hidden=true;setAdding(false);}
+$('#reportBtn').addEventListener('click',()=>openReport(null));
+$('#rpClose').addEventListener('click',closeReport);
+/* Photos are shrunk on the phone (longest side 1280 px, JPEG) to about 150 KB before upload. */
+async function shrinkPhoto(file){
+  const bmp=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>null);
+  if(!bmp)throw new Error('That photo could not be read. Try a JPEG or PNG.');
+  for(const [max,q] of [[1280,0.72],[1024,0.62],[800,0.55]]){
+    const k=Math.min(1,max/Math.max(bmp.width,bmp.height)),w=Math.round(bmp.width*k),h=Math.round(bmp.height*k);
+    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(bmp,0,0,w,h);
+    const b=await new Promise(r=>c.toBlob(r,'image/jpeg',q));
+    if(b&&b.size<=380000)return b;
+  }
+  throw new Error('That photo is too large even after shrinking.');
+}
+$('#addPhoto').addEventListener('change',async e=>{
+  const f=e.target.files?.[0];if(!f)return;
+  $('#photoLbl').textContent='Preparing…';
+  try{photoBlob=await shrinkPhoto(f);const u=URL.createObjectURL(photoBlob);$('#photoPrev').src=u;$('#photoPrev').hidden=false;$('#photoDel').hidden=false;
+    $('#photoLbl').textContent='Change photo';}
+  catch(err){photoBlob=null;toast(err.message);$('#photoLbl').textContent='Add a photo';}
+  e.target.value='';
+});
+$('#photoDel').addEventListener('click',()=>{photoBlob=null;$('#photoPrev').hidden=true;$('#photoDel').hidden=true;$('#photoLbl').textContent='Add a photo';});
 function readForm(){
   const inches=parseFloat($('#addVal').value);
   if(!(inches>=0&&inches<=60)){toast('Enter the ice thickness in inches, 0 to 60.');return null;}
-  const snow=parseFloat($('#addSnow').value);
-  return {inches:Math.round(inches*2)/2,snow_inches:isNaN(snow)?null:Math.max(0,Math.min(48,snow)),ice:$('#addIce').value||null};
+  const snow=parseFloat($('#addSnow').value),note=$('#addNote').value.trim().slice(0,140);
+  return {inches:Math.round(inches*2)/2,snow_inches:isNaN(snow)?null:Math.max(0,Math.min(48,snow)),ice:$('#addIce').value||null,note:note||null};
 }
 async function submitReading(l,lon,lat){
   const f=readForm();if(!f)return false;
-  const {error}=await supabase.from('readings').insert({lake_id:l.id,...f,location:`SRID=4326;POINT(${lon} ${lat})`});
-  if(error){toast(error.code==='23514'?`That spot is not on ${label(l)}. Readings can only go on the lake.`:'Could not save the reading: '+error.message,4500);return false;}
+  toast('Saving…',20000);
+  let photo_path=null;
+  if(photoBlob){
+    photo_path=`${user.id}/${Date.now().toString(36)}${Math.random().toString(36).slice(2,8)}.jpg`;
+    const {error}=await supabase.storage.from('photos').upload(photo_path,photoBlob,{contentType:'image/jpeg',cacheControl:'31536000'});
+    if(error){toast('The photo did not upload: '+error.message,4500);return false;}
+  }
+  const {error}=await supabase.from('readings').insert({lake_id:l.id,...f,photo_path,location:`SRID=4326;POINT(${lon} ${lat})`});
+  if(error){
+    if(photo_path)supabase.storage.from('photos').remove([photo_path]);
+    toast(error.code==='23514'?`That spot is not on ${label(l)}. Reports can only go on the lake.`:'Could not save the report: '+error.message,4500);return false;}
+  $('#addNote').value='';$('#photoDel').click();
   await refresh();selected=l.id;map.setFilter('sel',['==',['get','id'],l.id]);renderList();
+  closeReport();
   toast(`Saved ${fmt(f.inches)} in on ${label(l)}. It now averages ${fmt(lakeInfo(l.id).avg)} in. Thanks!`,4500);
   return true;
 }
 function setAdding(on){adding=on;$('#addBtn').setAttribute('aria-pressed',String(on));document.body.classList.toggle('adding',on);
-  if(on)toast(map.getZoom()<11?'Zoom in on the spot you measured, then tap the lake.':'Tap the spot on the lake where you measured.');}
+  if(on){$('#rp').classList.add('peek');toast(map.getZoom()<11?'Zoom in on the spot you measured, then tap the lake.':'Tap the spot on the lake where you measured.',6000);}
+  else $('#rp').classList.remove('peek');}
 $('#addBtn').addEventListener('click',()=>setAdding(!adding));
+$('#gpsBtn').addEventListener('click',async()=>{
+  const b=$('#gpsBtn');b.disabled=true;
+  try{
+    toast('Getting your GPS position…',20000);
+    const c=await locate();showMe(c);
+    map.easeTo({center:[c.longitude,c.latitude],zoom:Math.max(map.getZoom(),14),duration:900});
+    if(c.accuracy>75){toast(`GPS is only good to about ${Math.round(c.accuracy)} m right now. Wait a moment and try again, or pick the spot on the map.`,6000);return;}
+    const {data,error}=await supabase.rpc('lake_at',{lon:c.longitude,lat:c.latitude});
+    if(error)throw new Error('Could not check which lake you are on.');
+    if(!data?.length){toast(`You don't seem to be on a lake (GPS ±${Math.round(c.accuracy)} m). Reports can only go on the ice.`,5000);return;}
+    const l=lakeInfo(data[0].id,{name:data[0].name});if(!l.county)l.county=data[0].county||'';
+    await submitReading(l,c.longitude,c.latitude);
+  }catch(e){e.message?toast(e.message,4500):$('#toast').hidden=true;}
+  finally{b.disabled=false;}
+});
 
 map.on('click',async e=>{
   const {x,y}=e.point,ll=e.lngLat;
   const f=map.queryRenderedFeatures(e.point,{layers:['water']})[0];
   if(adding){
-    if(!f){toast('That spot is on land. Readings can only go on water.');return;}
+    if(!f){toast('That spot is on land. Reports can only go on water.');return;}
     if(map.getZoom()<11){map.easeTo({center:ll,zoom:12.5,duration:800});toast('Zoomed in. Now tap the exact spot you measured.');return;}
     const l=lakeInfo(f.properties.id,f.properties);
     await loadGeom(l);
     if(l.geom&&!inLake(l,ll.lng,ll.lat)){toast(`That spot is right on the ${label(l)} shoreline. Tap a little farther out.`);return;}
-    if(await submitReading(l,ll.lng,ll.lat))setAdding(false);
+    await submitReading(l,ll.lng,ll.lat);
     return;
   }
   if(pinAlpha(map.getZoom())>0.3){let best=null,bd=18*18;
@@ -496,42 +636,85 @@ map.on('click',async e=>{
   if(f)selectLake(f.properties.id,false,f.properties);else clearSel();
 });
 
-/* GPS: show where you are, and report at that exact spot */
-function circle(lon,lat,m){const pts=[];for(let i=0;i<=48;i++){const a=i/48*2*Math.PI;
-  pts.push([lon+m*Math.cos(a)/(111320*Math.cos(lat*Math.PI/180)),lat+m*Math.sin(a)/110540]);}return pts;}
-function locate(){
-  return new Promise((res,rej)=>{
-    if(!navigator.geolocation)return rej(new Error('This device does not share its location.'));
-    navigator.geolocation.getCurrentPosition(p=>res(p.coords),e=>rej(new Error(e.code===1?'Location is turned off for IceBuddy. Allow it in your browser or phone settings.':'Could not get a GPS fix. Try again in the open.')),
-      {enableHighAccuracy:true,timeout:20000,maximumAge:5000});});
-}
-function showMe(c){
-  map.getSource('me')?.setData(fc([{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[circle(c.longitude,c.latitude,c.accuracy)]}},
-    {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[c.longitude,c.latitude]}}]));
-}
-$('#locBtn').addEventListener('click',async()=>{
-  try{const c=await locate();showMe(c);map.easeTo({center:[c.longitude,c.latitude],zoom:Math.max(map.getZoom(),13),duration:900});}
-  catch(e){toast(e.message,4500);}
-});
-$('#gpsBtn').addEventListener('click',async()=>{
-  const b=$('#gpsBtn');b.disabled=true;toast('Getting your GPS position…',20000);
-  try{
-    const c=await locate();showMe(c);
-    map.easeTo({center:[c.longitude,c.latitude],zoom:Math.max(map.getZoom(),14),duration:900});
-    if(c.accuracy>75){toast(`GPS is only good to about ${Math.round(c.accuracy)} m right now. Wait a moment and try again, or tap the spot on the map.`,6000);return;}
-    const {data,error}=await supabase.rpc('lake_at',{lon:c.longitude,lat:c.latitude});
-    if(error)throw new Error('Could not check which lake you are on.');
-    if(!data?.length){toast(`You don't seem to be on a lake (GPS ±${Math.round(c.accuracy)} m). Readings can only go on the ice.`,5000);return;}
-    const l=lakeInfo(data[0].id,{name:data[0].name});if(!l.county)l.county=data[0].county||'';
-    await submitReading(l,c.longitude,c.latitude);
-  }catch(e){toast(e.message,4500);}
-  finally{b.disabled=false;}
-});
-
 async function deleteReading(r){
   const {error}=await supabase.from('readings').delete().eq('id',r.id);
   if(error){toast('Could not delete it: '+error.message);return;}
-  hidePop();await refresh();toast('Your reading was deleted.');
+  if(r.photo)supabase.storage.from('photos').remove([r.photo]);
+  hidePop();await refresh();toast('Your report was deleted.');
+}
+
+/* ---------- "Notify me" alerts (phone notifications through Web Push) ---------- */
+const VAPID=import.meta.env.VITE_VAPID_PUBLIC_KEY;
+let alertLake=null,myAlerts=[];
+const b64u=s=>{const p='='.repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0));};
+const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent),standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+function pushNote(){
+  if(isIOS&&!standalone)return 'On iPhone, notifications only work after you add IceBuddy to your Home Screen: tap Share, then “Add to Home Screen”, and open it from there.';
+  if(!('PushManager' in window))return 'This browser can’t show notifications. Try Chrome or Safari on your phone.';
+  if(Notification.permission==='denied')return 'Notifications are blocked for IceBuddy. Allow them in your browser’s site settings, then save the alert again.';
+  return 'We’ll ask to send notifications when you save.';
+}
+function withTimeout(p,ms,msg){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(msg)),ms))]);}
+async function ensurePush(){
+  if(!('serviceWorker' in navigator)||!('PushManager' in window))throw new Error(pushNote());
+  if(isIOS&&!standalone)throw new Error(pushNote());
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')throw new Error('Notifications are not allowed, so the alert could not be set. Allow them in your browser’s site settings and try again.');
+  if(!VAPID)throw new Error('Notifications aren’t set up on this site yet.');
+  const slow='Your phone didn’t finish turning on notifications. Check your connection and try again.';
+  const reg=await withTimeout(navigator.serviceWorker.ready,8000,slow);
+  let sub;
+  try{sub=await reg.pushManager.getSubscription()||await withTimeout(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(VAPID)}),15000,slow);}
+  catch(e){throw new Error(e.message===slow?slow:'Could not turn on notifications on this device ('+(e.message||e.name)+').');}
+  const j=sub.toJSON();
+  const {error}=await supabase.from('push_subscriptions').upsert({endpoint:j.endpoint,user_id:user.id,p256dh:j.keys.p256dh,auth:j.keys.auth});
+  if(error)throw new Error('Could not register this phone for notifications: '+error.message);
+}
+function setAlertLake(l){alertLake=l;$('#alertLakeQ').value=l?label(l)+(l.county?' · '+l.county:''):'';$('#alertLakeHits').hidden=true;}
+function openAlert(l){
+  needUser('Sign in to get ice alerts',()=>{
+    setAlertLake(l||(selected?lakes.get(selected):null)||null);
+    $('#alertMsg').textContent='';$('#alertNote').textContent=pushNote();
+    if($('#authDlg').open)$('#authDlg').close();
+    $('#alertDlg').showModal();if(!alertLake)setTimeout(()=>$('#alertLakeQ').focus(),50);
+  });
+}
+$('#alertsBtn').addEventListener('click',()=>openAlert(null));
+$('#acctNewAlert').addEventListener('click',()=>openAlert(null));
+$('#alertLakeQ').addEventListener('input',e=>{
+  const q=e.target.value.trim(),ul=$('#alertLakeHits');alertLake=null;
+  if(q.length<2){ul.hidden=true;return;}
+  ul.replaceChildren(...search(q).slice(0,8).map(ix=>{const li=el('li',null,label(ix)+(ix.county?' · '+ix.county:''));
+    li.tabIndex=0;li.onclick=()=>setAlertLake(lakeInfo(ix.id));li.onkeydown=ev=>{if(ev.key==='Enter')setAlertLake(lakeInfo(ix.id));};return li;}));
+  ul.hidden=!ul.children.length;
+});
+$('#alertSave').addEventListener('click',async()=>{
+  const msg=$('#alertMsg'),inches=parseFloat($('#alertIn').value);
+  if(!alertLake){msg.textContent='Pick a lake first.';return;}
+  if(!(inches>=0&&inches<=60)){msg.textContent='Enter inches from 0 to 60.';return;}
+  $('#alertSave').disabled=true;msg.textContent='Saving…';
+  try{
+    await ensurePush();
+    const {error}=await supabase.from('alerts').insert({lake_id:alertLake.id,metric:$('#alertMetric').value,op:$('#alertOp').value,inches:Math.round(inches*2)/2});
+    if(error)throw new Error(error.message);
+    msg.textContent='';$('#alertDlg').close();toast(`Alert saved for ${label(alertLake)}.`);await loadAlerts();
+  }catch(e){msg.textContent=e.message;}
+  finally{$('#alertSave').disabled=false;}
+});
+async function loadAlerts(){
+  if(!user){myAlerts=[];return;}
+  const {data}=await supabase.from('alerts').select('id,lake_id,metric,op,inches').order('created_at');
+  myAlerts=data||[];renderAlertList();
+}
+function renderAlertList(){
+  const ul=$('#acctAlerts');ul.replaceChildren();
+  if(!myAlerts.length){ul.append(el('li','empty','No alerts yet. Open a lake and tap “Notify me”.'));return;}
+  for(const a of myAlerts){
+    const l=lakeInfo(a.lake_id,{name:INDEX.get(a.lake_id)?.name});
+    const li=el('li',null,`${label(l)}: ${a.metric==='average'?'average':'any report'} ${a.op==='gte'?'≥':'≤'} ${fmt(+a.inches)} in`);
+    const x=el('button','link','Delete');x.onclick=async()=>{await supabase.from('alerts').delete().eq('id',a.id);await loadAlerts();};
+    li.append(x);ul.append(li);
+  }
 }
 const tip=$('#tip');
 map.on('mousemove',e=>{
@@ -556,11 +739,14 @@ async function refresh(){
   syncStates();renderList();draw();
 }
 let ready;const mapLoaded=new Promise(r=>ready=r);function mapReady(){ready();}
-const {data:{session}}=await supabase.auth.getSession();user=session?.user??null;renderAuth();
-await loadReports();stats();
+const {data:{session}}=await supabase.auth.getSession();user=session?.user??null;
+await Promise.all([loadReports(),loadProfile().then(loadAlerts)]);renderAuth();stats();
 await mapLoaded;
 await loadGeoms(reported());
 syncStates();renderList();draw();
+// a notification links to ?lake=<id>
+const deep=new URLSearchParams(location.search).get('lake');
+if(deep&&/^[a-z]{2,8}:[A-Za-z0-9]+$/.test(deep)){history.replaceState(null,'',location.pathname);selectLake(deep,true);}
 setInterval(()=>{if(!document.hidden)refresh();},120000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 if('serviceWorker' in navigator&&import.meta.env.PROD)navigator.serviceWorker.register(import.meta.env.BASE_URL+'sw.js').catch(()=>{});
