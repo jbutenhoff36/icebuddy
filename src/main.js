@@ -64,14 +64,47 @@ async function loadGeoms(ls){
 }
 async function loadGeom(l){await loadGeoms([l]);return l.geom;}
 let reports=[];
-/* Reports from the last 30 days, newest first. */
+/* Reports in the chosen date range (default: the last 30 days), newest first. */
+const DAY=864e5;
+let range={mode:'now',from:0,to:0};   // from/to in ms; to is the end of the last day picked
+const isHist=()=>range.mode!=='now';
+// In a past range, ages count back from the newest report in it, so the map shades it like it looked that day.
+let histRef=0;
+const refT=()=>isHist()?histRef:Date.now();
+const dayStart=d=>{const x=new Date(d);x.setHours(0,0,0,0);return x.getTime();};
+const ymd=t=>{const d=new Date(t);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const parseYmd=v=>{const [y,m,d]=v.split('-').map(Number);return new Date(y,m-1,d).getTime();};
+function winterOf(t){const d=new Date(t);const y=d.getMonth()>=6?d.getFullYear():d.getFullYear()-1;return [new Date(y,10,1).getTime(),new Date(y+1,3,30,23,59,59,999).getTime()];}
+function setRange(mode){
+  const now=Date.now();range.mode=mode;
+  if(mode==='now'){range.from=now-30*DAY;range.to=now;}
+  else if(mode==='week'){range.from=dayStart(now-6*DAY);range.to=now;}
+  else if(mode==='winter'){[range.from,range.to]=winterOf(now);}
+  else if(mode==='lastwinter'){const y=new Date(winterOf(now)[0]).getFullYear();[range.from,range.to]=winterOf(new Date(y-1,11,1).getTime());}
+  else if(mode==='custom'){
+    const f=$('#dFrom').value,t=$('#dTo').value;
+    range.from=f?parseYmd(f):dayStart(now-30*DAY);range.to=(t?parseYmd(t):dayStart(now))+DAY-1;
+    if(range.from>range.to)[range.from,range.to]=[dayStart(range.to),range.from+DAY-1];
+  }
+  $('#dateMode').value=mode;$('#drange').hidden=mode!=='custom';
+  if(mode==='custom'){$('#dFrom').value=ymd(range.from);$('#dTo').value=ymd(range.to);}
+  const tag=$('#histTag');tag.hidden=!isHist();tag.textContent=isHist()?rangeTxt():'';
+}
+function rangeTxt(){
+  const o={month:'short',day:'numeric'},a=new Date(range.from),b=new Date(Math.min(range.to,Date.now()));
+  if(a.getFullYear()!==b.getFullYear()||a.getFullYear()!==new Date().getFullYear())o.year='numeric';
+  return a.toLocaleDateString(undefined,o)+' – '+b.toLocaleDateString(undefined,o);
+}
 async function loadReports(){
-  const {data,error}=await supabase.from('readings_recent').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat,photo_path,display_name')
+  const {data,error}=await supabase.from('readings_history').select('id,lake_id,user_id,inches,snow_inches,ice,note,observed_at,lon,lat,photo_path,display_name')
+    .gte('observed_at',new Date(range.from).toISOString()).lte('observed_at',new Date(range.to).toISOString())
     .order('observed_at',{ascending:false}).range(0,4999);
-  if(error){console.warn('readings',error);toast('Could not load reports. Showing the map without them.');return;}
-  const now=Date.now();
+  if(error){console.warn('readings',error);toast('Could not load reports. Showing the map without them.');reports=[];return;}
+  if(data.length===5000)toast('That date range has a lot of reports, so only the newest 5,000 are shown. Pick a shorter range to see the rest.',5000);
+  histRef=data.length?Math.max(...data.map(r=>Date.parse(r.observed_at))):Math.min(Date.now(),range.to);
+  const ref=refT();
   reports=data.map(r=>({id:r.id,lake:r.lake_id,user:r.user_id,lon:r.lon,lat:r.lat,inches:+r.inches,snow:r.snow_inches==null?null:+r.snow_inches,
-    ice:r.ice,note:r.note,photo:r.photo_path,by:r.display_name,ageH:Math.max(0,(now-Date.parse(r.observed_at))/3.6e6)}));
+    ice:r.ice,note:r.note,photo:r.photo_path,by:r.display_name,ageH:Math.max(0,(ref-Date.parse(r.observed_at))/3.6e6)}));
 }
 const recency=h=>Math.exp(-h/96);
 function stats(){
@@ -239,7 +272,7 @@ function updateMode(z){
 
 /* ---------- list and search ---------- */
 let selected=null,query='';
-const ago=h=>h<1?'just now':h<24?Math.round(h)+' h ago':Math.round(h/24)+' d ago';
+const ago=h=>isHist()?new Date(refT()-h*3.6e6).toLocaleDateString(undefined,{month:'short',day:'numeric'}):h<1?'just now':h<24?Math.round(h)+' h ago':Math.round(h/24)+' d ago';
 const fmt=v=>(Math.round(v*2)/2).toFixed(1).replace('.0','');
 const acresTxt=a=>a>=1000?(a/1000).toFixed(a>=10000?0:1)+'k acres':Math.round(a)+' acres';
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
@@ -259,19 +292,19 @@ function lakeRow(l,detail){
     :`${fmt(l.min)}–${fmt(l.max)} in · ${l.n} reports · ${ago(l.newest)}`);
   const flags=el('span','flags');
   if(l.avg!=null&&l.max-l.min>=8)flags.append(el('span','flag warn','Wide range'));
-  if(l.avg!=null&&l.newest>96)flags.append(el('span','flag','Stale'));
+  if(!isHist()&&l.avg!=null&&l.newest>96)flags.append(el('span','flag','Stale'));
   li.append(sw,el('span','nm',label(l)),avg,meta,flags);
   if(detail){
     const d=el('div','detail');
+    const acts=el('div','acts');
+    const rb=el('button','btn primary','Report ice here');rb.addEventListener('click',ev=>{ev.stopPropagation();openReport(l);});
+    const nb=el('button','btn','Notify me');nb.addEventListener('click',ev=>{ev.stopPropagation();openAlert(l);});
+    const fb=el('button','btn','Ice calc');fb.title='Estimate how fast the ice will grow';fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
+    acts.append(rb,nb,fb);d.append(acts);
     const st=(v,k)=>{const e=el('div','stat');e.append(el('b',null,v),el('span',null,k));return e;};
     if(l.avg!=null){d.append(st(fmt(l.min)+' in','Thinnest'),st(fmt(l.max)+' in','Thickest'),st(l.n,'Reports'));
       d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres · DNR lake ${l.id.split(':')[1]}. The average leans toward newer reports. Zoom in to see each reading.`));}
     else d.append(el('p',null,`${l.county?l.county+' County · ':''}${Math.round(l.acres).toLocaleString()} acres. No one has reported ice here in the last 30 days. Be the first: tap “Report ice here”.`));
-    const acts=el('div','acts');
-    const rb=el('button','btn primary','Report ice here');rb.addEventListener('click',ev=>{ev.stopPropagation();openReport(l);});
-    const nb=el('button','btn','Notify me');nb.addEventListener('click',ev=>{ev.stopPropagation();openAlert(l);});
-    const fb=el('button','link','Ice growth forecast');fb.addEventListener('click',ev=>{ev.stopPropagation();openForecast(l);});
-    acts.append(rb,nb,fb);d.append(acts);
     li.append(d);
   }
   li.addEventListener('click',()=>selectLake(l.id,true));
@@ -287,7 +320,7 @@ function renderList(){
     for(const ix of hits)ul.append(lakeRow(lakes.get(ix.id)||ix,selected===ix.id));
     return;
   }
-  const sortBy=$('#sort').value,stale=l=>l.newest>96;
+  const sortBy=$('#sort').value,stale=l=>!isHist()&&l.newest>96;
   const key={thick:l=>-l.avg,thin:l=>l.avg,recent:l=>l.newest,count:l=>-l.n}[sortBy];
   const ls=reported().sort((a,b)=>{
     if(sortBy==='az')return label(a).localeCompare(label(b));
@@ -295,10 +328,11 @@ function renderList(){
     return key(a)-key(b);});
   const sel=selected&&lakes.get(selected);
   if(sel&&sel.avg==null){ul.append(el('li','sec','Selected lake'),lakeRow(sel,true),el('li','sec','Lakes with reports'));}
-  $('#count').textContent=ls.length+' lakes with reports';
+  $('#count').textContent=ls.length+(ls.length===1?' lake':' lakes')+(isHist()?' with reports in these dates':' with reports');
   for(const l of ls)ul.append(lakeRow(l,selected===l.id));
 }
 async function selectLake(id,fly,props){
+  if(fcLakeRef&&fcLakeRef.id!==id)$('#fc').hidden=true;
   selected=id;const l=lakeInfo(id,props);
   map.setFilter('sel',['==',['get','id'],id||'']);
   if(fly){query='';$('#q').value='';}
@@ -307,7 +341,8 @@ async function selectLake(id,fly,props){
   if(fly&&l.bbox){map.fitBounds([[l.bbox[0],l.bbox[1]],[l.bbox[2],l.bbox[3]]],
     {padding:{top:70,bottom:wide()?70:innerHeight*0.48,left:wide()?390:30,right:wide()?60:30},maxZoom:12,duration:1400,essential:true});
     if(!wide())collapse(true);}
-  const row=document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);row&&row.scrollIntoView({block:'nearest',behavior:'smooth'});
+  if(!fly&&!wide()&&$('#panel').classList.contains('collapsed'))collapse(false,false);
+  const row=document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);row&&row.scrollIntoView({block:wide()?'nearest':'start',behavior:'smooth'});
 }
 function clearSel(){selected=null;map.setFilter('sel',['==',['get','id'],'']);renderList();}
 let qt;$('#q').addEventListener('input',e=>{clearTimeout(qt);qt=setTimeout(()=>{query=e.target.value.trim();renderList();},120);});
@@ -447,20 +482,52 @@ function openAuth(why){
   $('#authOut').hidden=!!user;$('#authIn').hidden=!user;
   $('#authTitle').textContent=why||'Sign in to IceBuddy';
   if(user){$('#authWho').textContent=user.email;$('#acctName').value=profile?.display_name||'';renderAlertList();}
-  $('#authMsg').textContent='';if(!d.open)d.showModal();
-  if(!user)setTimeout(()=>$('#authEmail').focus(),50);
+  if(!d.open){$('#authMsg').textContent='';if(!user&&!authEmailSent)authStep(false);}
+  if(!d.open)d.showModal();
+  if(!user&&$('#codeForm').hidden)setTimeout(()=>$('#authEmail').focus(),50);
 }
 /* Run fn now if signed in, otherwise ask to sign in and run it right after. */
 function needUser(why,fn){if(user)return fn();afterSignIn=fn;openAuth(why);}
 $('#authBtn').addEventListener('click',()=>openAuth());
 $('#authClose').addEventListener('click',()=>$('#authDlg').close());
+/* Sign in with a code typed into the app. The email also has a link, but on phones the link often opens
+   in a different browser than the app (it can't finish signing in there), so the code is the main path. */
+let authEmailSent='';
+function authStep(code){
+  $('#authForm').hidden=code;$('#codeForm').hidden=!code;$('#authBack').hidden=!code;
+  $('#authLead').textContent=code?`We sent a code to ${authEmailSent}. Type it below.`:'We\'ll email you a sign-in code. No password needed.';
+  if(code){$('#authCode').value='';setTimeout(()=>$('#authCode').focus(),50);}
+}
+function authErr(error){
+  const m=(error.message||'').toLowerCase();
+  if(error.status===429||m.includes('rate limit'))return 'Too many sign-in emails have gone out in the last hour. Please try again a bit later.';
+  if(m.includes('expired')||m.includes('invalid')||m.includes('token'))return 'That code didn’t work. Check it, or send a new one.';
+  return 'That did not work: '+error.message;
+}
 $('#authForm').addEventListener('submit',async e=>{
   e.preventDefault();const email=$('#authEmail').value.trim();if(!email)return;
   $('#authSend').disabled=true;$('#authMsg').textContent='Sending…';
   const {error}=await supabase.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+import.meta.env.BASE_URL}});
   $('#authSend').disabled=false;
-  $('#authMsg').textContent=error?('That did not work: '+error.message):`Check ${email} for a sign-in link. Open it on this device.`;
+  if(error){$('#authMsg').textContent=authErr(error);return;}
+  authEmailSent=email;$('#authMsg').textContent='It can take a minute. Check spam if you don’t see it.';authStep(true);
 });
+$('#codeForm').addEventListener('submit',async e=>{
+  e.preventDefault();const token=$('#authCode').value.replace(/\D/g,'');if(token.length<6)return;
+  $('#codeBtn').disabled=true;$('#authMsg').textContent='Signing in…';
+  const {error}=await supabase.auth.verifyOtp({email:authEmailSent,token,type:'email'});
+  $('#codeBtn').disabled=false;
+  $('#authMsg').textContent=error?authErr(error):'';
+});
+/* "Continue with Google" shows only once the Google provider is switched on in Supabase. */
+fetch(import.meta.env.VITE_SUPABASE_URL+'/auth/v1/settings',{headers:{apikey:import.meta.env.VITE_SUPABASE_KEY}})
+  .then(r=>r.ok?r.json():null).then(j=>{if(j?.external?.google){$('#googleBtn').hidden=false;$('#googleOr').hidden=false;}}).catch(()=>{});
+$('#googleBtn').addEventListener('click',async()=>{
+  $('#authMsg').textContent='Opening Google…';
+  const {error}=await supabase.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+import.meta.env.BASE_URL+location.search}});
+  if(error)$('#authMsg').textContent='Google sign-in isn’t available right now. Use the email code instead.';
+});
+$('#authBack').addEventListener('click',()=>{$('#authMsg').textContent='';authStep(false);$('#authEmail').focus();});
 $('#signOut').addEventListener('click',async()=>{await supabase.auth.signOut();$('#authDlg').close();toast('Signed out.');});
 const NAME_OK=/^[A-Za-z0-9 ._'-]{2,40}$/;
 async function saveName(name,msgEl){
@@ -592,6 +659,7 @@ async function submitReading(l,lon,lat){
     if(photo_path)supabase.storage.from('photos').remove([photo_path]);
     toast(error.code==='23514'?`That spot is not on ${label(l)}. Reports can only go on the lake.`:'Could not save the report: '+error.message,4500);return false;}
   $('#addNote').value='';$('#photoDel').click();
+  if(isHist())setRange('now');
   await refresh();selected=l.id;map.setFilter('sel',['==',['get','id'],l.id]);renderList();
   closeReport();
   toast(`Saved ${fmt(f.inches)} in on ${label(l)}. It now averages ${fmt(lakeInfo(l.id).avg)} in. Thanks!`,4500);
@@ -711,7 +779,7 @@ function renderAlertList(){
   if(!myAlerts.length){ul.append(el('li','empty','No alerts yet. Open a lake and tap “Notify me”.'));return;}
   for(const a of myAlerts){
     const l=lakeInfo(a.lake_id,{name:INDEX.get(a.lake_id)?.name});
-    const li=el('li',null,`${label(l)}: ${a.metric==='average'?'average':'any report'} ${a.op==='gte'?'≥':'≤'} ${fmt(+a.inches)} in`);
+    const li=el('li',null,`${label(l)}: ${a.metric==='average'?'average':'any report'} ${a.op==='gte'?'>':'<'} ${fmt(+a.inches)} in`);
     const x=el('button','link','Delete');x.onclick=async()=>{await supabase.from('alerts').delete().eq('id',a.id);await loadAlerts();};
     li.append(x);ul.append(li);
   }
@@ -731,6 +799,11 @@ $('#zin').onclick=()=>map.zoomIn();$('#zout').onclick=()=>map.zoomOut();
 $('#satBtn').onclick=()=>setSatellite(!satellite);
 window.icebuddyMap=map;
 
+$('#dateMode').addEventListener('change',async e=>{setRange(e.target.value);hidePop();await refresh();
+  if(isHist()&&!reported().length)toast('No ice reports in those dates.');});
+for(const id of ['#dFrom','#dTo'])$(id).addEventListener('change',async()=>{setRange('custom');hidePop();await refresh();
+  if(!reported().length)toast('No ice reports in those dates.');});
+
 /* ---------- start ---------- */
 async function refresh(){
   for(const l of lakes.values())l.avg=null;
@@ -740,6 +813,13 @@ async function refresh(){
 }
 let ready;const mapLoaded=new Promise(r=>ready=r);function mapReady(){ready();}
 const {data:{session}}=await supabase.auth.getSession();user=session?.user??null;
+const linkQ=new URLSearchParams(location.search+'&'+location.hash.slice(1));
+if(linkQ.has('code')||linkQ.has('error_description')){
+  const {data:{session}}=await supabase.auth.getSession();
+  if(!session)setTimeout(()=>toast('Sign-in couldn’t finish because it opened in a different browser than IceBuddy. Go back to IceBuddy and sign in with the code from the email.',8000),800);
+  history.replaceState(null,'',location.pathname+(linkQ.get('lake')?'?lake='+encodeURIComponent(linkQ.get('lake')):''));
+}
+setRange('now');
 await Promise.all([loadReports(),loadProfile().then(loadAlerts)]);renderAuth();stats();
 await mapLoaded;
 await loadGeoms(reported());

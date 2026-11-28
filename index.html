@@ -19,7 +19,7 @@
   <canvas id="overlay"></canvas>
 
   <div id="mode" class="glass" aria-live="polite">
-    <span class="steps"><i></i><i></i><i></i></span><b id="modeName">Lake averages</b><span class="z" id="zl"></span>
+    <span class="steps"><i></i><i></i><i></i></span><b id="modeName">Lake averages</b><span class="z" id="zl"></span><span class="hist" id="histTag" hidden></span>
   </div>
 
   <div id="zoom" class="glass">
@@ -57,6 +57,19 @@
           <option value="az">Name A–Z</option>
         </select>
       </div>
+      <div class="daterow">
+        <label for="dateMode">Dates</label>
+        <select id="dateMode" aria-label="Which reports to show">
+          <option value="now">Current ice (last 30 days)</option>
+          <option value="week">Last 7 days</option>
+          <option value="winter">This winter</option>
+          <option value="lastwinter">Last winter</option>
+          <option value="custom">Pick dates…</option>
+        </select>
+      </div>
+      <div class="drange" id="drange" hidden>
+        <input type="date" id="dFrom" aria-label="From date"><span>to</span><input type="date" id="dTo" aria-label="To date">
+      </div>
     </div>
     <ul id="list" role="listbox" aria-label="Lakes"></ul>
     <div class="pfoot">
@@ -67,11 +80,11 @@
 
   <div id="legend" class="glass">
     <button class="coll" id="legendBtn" aria-expanded="true" aria-controls="legendBody"><h3>Reported ice thickness</h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="trow blend"><label for="radius" title="How far each report spreads its color on the map">Blend</label><input id="radius" type="range" min="300" max="5000" step="100" value="1800"><output id="radiusOut" for="radius">1.8 km</output></div>
     <div class="lbody" id="legendBody">
     <div class="ramp"></div>
     <div class="ticks"><span>0</span><span>4</span><span>7</span><span>12</span><span>20+ in</span></div>
     <p>Colors show what people reported, not whether ice will hold you. Ice is never guaranteed safe.</p>
-    <div class="trow"><label for="radius">Blend distance</label><input id="radius" type="range" min="300" max="5000" step="100" value="1800"><output id="radiusOut" for="radius">1.8 km</output></div>
     </div>
   </div>
 
@@ -100,9 +113,14 @@
     <button class="x" id="authClose" aria-label="Close">×</button>
     <div id="authOut">
       <h2 id="authTitle">Sign in to IceBuddy</h2>
-      <p>We'll email you a link. No password needed.</p>
+      <button class="btn gbtn" id="googleBtn" type="button" hidden><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continue with Google</button>
+      <p class="or" id="googleOr" hidden>or</p>
+      <p id="authLead">We'll email you a sign-in code. No password needed.</p>
       <form id="authForm"><input id="authEmail" type="email" required autocomplete="email" placeholder="you@example.com" aria-label="Email address">
-        <button class="btn primary" id="authSend" type="submit">Email me a link</button></form>
+        <button class="btn primary" id="authSend" type="submit">Email me a code</button></form>
+      <form id="codeForm" hidden><input id="authCode" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="Code from the email" aria-label="Sign-in code">
+        <button class="btn primary" id="codeBtn" type="submit">Sign in</button></form>
+      <button class="link" id="authBack" type="button" hidden>Use a different email</button>
       <p class="msg" id="authMsg" role="status"></p>
     </div>
     <div id="authIn" hidden>
@@ -137,7 +155,7 @@
     <p>Get a phone notification when ice on a lake reaches the thickness you care about.</p>
     <label class="fl">Lake<span class="lakepick"><input id="alertLakeQ" placeholder="Search lakes" autocomplete="off" aria-label="Lake"><ul id="alertLakeHits" class="hits" hidden></ul></span></label>
     <div class="rule">When <select id="alertMetric" aria-label="Which ice measurement"><option value="average">the lake average</option><option value="any">any new report</option></select>
-      is <select id="alertOp" aria-label="Comparison"><option value="gte">at least</option><option value="lte">at most</option></select>
+      is <select id="alertOp" aria-label="Comparison"><option value="gte">greater than</option><option value="lte">less than</option></select>
       <input class="num" id="alertIn" type="number" min="0" max="60" step="0.5" value="8" inputmode="decimal" aria-label="Inches"> in</div>
     <p class="fnote" id="alertNote"></p>
     <p class="msg" id="alertMsg" role="status"></p>
